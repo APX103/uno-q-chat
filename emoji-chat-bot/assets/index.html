@@ -191,7 +191,7 @@
     .session-dropdown-menu {
       display: none;
       position: absolute;
-      bottom: calc(100% + 8px);
+      top: calc(100% + 8px);
       left: 0;
       min-width: 280px;
       max-height: 320px;
@@ -200,7 +200,7 @@
       border: 1px solid rgba(255,255,255,0.12);
       border-radius: 12px;
       box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-      z-index: 100;
+      z-index: 200;
       padding: 6px;
     }
 
@@ -604,7 +604,6 @@
     const input = document.getElementById('msgInput');
     const sendBtn = document.getElementById('sendBtn');
     const msgCount = document.getElementById('msgCount');
-    const clearBtn = document.getElementById('clearBtn');
     let messageCount = 0;
     let typingEl = null;
 
@@ -650,11 +649,12 @@
     function send() {
       const msg = input.value.trim();
       if (!msg) return;
+      const sessionId = ensureSession();
       addMessage(msg, 'user');
       input.value = '';
       sendBtn.disabled = true;
       showTyping();
-      socket.emit('user_message', { session_id: currentSessionId, message: msg });
+      socket.emit('user_message', { session_id: sessionId, message: msg });
     }
 
     sendBtn.onclick = send;
@@ -662,19 +662,32 @@
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
     };
 
-    newChatBtn.onclick = () => {
-      socket.emit('new_session', {}, response => {
-        if (response && response.session_id) {
-          currentSessionId = response.session_id;
-          document.getElementById('sessionLabel').textContent = currentSessionId.slice(0, 8);
-          msgBox.innerHTML = '';
-          messageCount = 0;
-          msgCount.textContent = '0 条消息';
-          msgBox.appendChild(welcome);
-          welcome.style.display = '';
-          addMessage('新会话已开始！', 'bot', 'neutral');
-        }
+    function createSessionId() {
+      return 'xxxxxxxxxxxx4xxxyxxxxxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
       });
+    }
+
+    function ensureSession() {
+      if (!currentSessionId) {
+        currentSessionId = createSessionId();
+        document.getElementById('sessionLabel').textContent = currentSessionId.slice(0, 8);
+      }
+      return currentSessionId;
+    }
+
+    newChatBtn.onclick = () => {
+      currentSessionId = createSessionId();
+      document.getElementById('sessionLabel').textContent = currentSessionId.slice(0, 8);
+      msgBox.innerHTML = '';
+      messageCount = 0;
+      msgCount.textContent = '0 条消息';
+      msgBox.appendChild(welcome);
+      welcome.style.display = '';
+      addMessage('新会话已开始！', 'bot', 'unknown');
+      socket.emit('new_session', { session_id: currentSessionId });
     };
 
     const sessionDropdown = document.getElementById('sessionDropdown');
@@ -682,7 +695,7 @@
 
     function openSessionDropdown() {
       socket.emit('list_sessions', {}, response => {
-        const sessions = response.sessions || [];
+        const sessions = (response && response.sessions) || [];
         sessionDropdown.innerHTML = '';
         if (sessions.length === 0) {
           sessionDropdown.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-secondary);font-size:0.78em;">暂无会话</div>';
@@ -752,17 +765,6 @@
       }
     });
 
-    clearBtn.onclick = () => {
-      if (confirm('确定要清空当前会话的所有对话记录吗？')) {
-        socket.emit('clear_history', { session_id: currentSessionId });
-        msgBox.innerHTML = '';
-        messageCount = 0;
-        msgCount.textContent = '0 条消息';
-        msgBox.appendChild(welcome);
-        welcome.style.display = '';
-      }
-    };
-
     document.querySelectorAll('.expr-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         setMatrix(chip.dataset.expr);
@@ -780,19 +782,18 @@
 
     socket.on('connect', () => {
       document.getElementById('statusDot').classList.add('online');
-      socket.emit('new_session', {}, response => {
-        if (response && response.session_id) {
-          currentSessionId = response.session_id;
-          document.getElementById('sessionLabel').textContent = '会话: ' + currentSessionId.slice(0, 8);
-          addMessage('已连接到 Arduino UNO Q！新会话已开始。', 'bot', 'neutral');
-          socket.emit('get_history', { session_id: currentSessionId });
-        }
-      });
+      if (!currentSessionId) {
+        currentSessionId = createSessionId();
+        document.getElementById('sessionLabel').textContent = currentSessionId.slice(0, 8);
+      }
+      addMessage('已连接到 Arduino UNO Q！新会话已开始。', 'bot', 'unknown');
+      socket.emit('new_session', { session_id: currentSessionId });
+      socket.emit('get_history', { session_id: currentSessionId });
     });
 
     socket.on('disconnect', () => {
       document.getElementById('statusDot').classList.remove('online');
-      addMessage('连接断开，请刷新页面重连。', 'bot', 'neutral');
+      addMessage('连接断开，请刷新页面重连。', 'bot', 'unknown');
       sendBtn.disabled = true;
     });
 

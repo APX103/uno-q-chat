@@ -5,6 +5,7 @@ import threading
 import re
 import time
 import uuid
+import os
 import requests
 from datetime import datetime
 
@@ -17,6 +18,21 @@ client_sessions = {}
 LLM_API_KEY = ""
 LLM_BASE_URL = "https://open.bigmodel.cn/api/coding/paas/v4"
 LLM_MODEL = "glm-5-turbo"
+
+# Override from .env if present (keeps key out of git)
+_env_path = os.path.join(os.path.dirname(__file__), '.env')
+if os.path.isfile(_env_path):
+    with open(_env_path) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith('#') and '=' in _line:
+                _k, _v = _line.split('=', 1)
+                if _k == 'LLM_API_KEY':
+                    LLM_API_KEY = _v.strip()
+                elif _k == 'LLM_BASE_URL':
+                    LLM_BASE_URL = _v.strip()
+                elif _k == 'LLM_MODEL':
+                    LLM_MODEL = _v.strip()
 
 SYSTEM_PROMPT = """\
 你是 Arduino UNO Q 表情聊天机器人，运行在一块开发板上，带有一个 8×13 的 LED 点阵屏。
@@ -75,7 +91,7 @@ def load_history_from_db(session_id: str):
         (session_id,)
     )
     history = [{"role": "system", "content": SYSTEM_PROMPT}]
-    for row in rows:
+    for row in (rows or []):
         entry = {"role": row["role"], "content": row["content"]}
         if row.get("expression"):
             entry["expression"] = row["expression"]
@@ -207,7 +223,7 @@ def on_get_history(sid, data):
         (session_id,)
     )
     messages = []
-    for row in reversed(rows):
+    for row in reversed(rows or []):
         messages.append({
             "role": row["role"],
             "content": row["content"],
@@ -218,7 +234,9 @@ def on_get_history(sid, data):
 
 
 def on_clear_history(sid, data):
-    session_id = data.get("session_id", "").strip() or client_sessions.get(sid, "")
+    if not isinstance(data, dict):
+        return {"status": "error", "message": "Invalid data"}
+    session_id = (data.get("session_id") or "").strip() or client_sessions.get(sid, "")
     if not session_id:
         return {"status": "error", "message": "No session"}
     db.execute_sql("DELETE FROM messages WHERE session_id = ?", (session_id,))
@@ -249,7 +267,7 @@ def on_list_sessions(sid, data):
         "COUNT(*) as msg_count FROM messages GROUP BY session_id ORDER BY last_active DESC"
     )
     sessions = []
-    for row in rows:
+    for row in (rows or []):
         sessions.append({
             "session_id": row["session_id"],
             "created_at": row["created_at"],
@@ -260,7 +278,9 @@ def on_list_sessions(sid, data):
 
 
 def on_switch_session(sid, data):
-    session_id = data.get("session_id", "").strip()
+    if not isinstance(data, dict):
+        return {"status": "error", "message": "Invalid data"}
+    session_id = (data.get("session_id") or "").strip()
     if not session_id:
         return {"status": "error", "message": "No session_id provided"}
     client_sessions[sid] = session_id
@@ -268,7 +288,9 @@ def on_switch_session(sid, data):
 
 
 def on_delete_session(sid, data):
-    session_id = data.get("session_id", "").strip()
+    if not isinstance(data, dict):
+        return {"status": "error", "message": "Invalid data"}
+    session_id = (data.get("session_id") or "").strip()
     if not session_id:
         return {"status": "error", "message": "No session_id provided"}
     db.execute_sql("DELETE FROM messages WHERE session_id = ?", (session_id,))
@@ -289,5 +311,5 @@ if __name__ == "__main__":
 
     init_db()
     display_expression("unknown")
-    print("空气质量表情聊天机器人已启动！")
+    print("表情聊天机器人已启动！")
     App.run()
