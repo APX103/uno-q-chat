@@ -1,0 +1,7 @@
+name: Emoji Chat Bot
+description: AI chat bot with LED matrix expressions on Arduino UNO Q
+icon: 🤖
+version: "1.0.0"
+bricks:
+  - arduino:dbstorage_sqlstore
+  - arduino:web_ui
